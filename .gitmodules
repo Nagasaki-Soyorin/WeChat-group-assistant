@@ -1,0 +1,3 @@
+[submodule "wxauto"]
+	path = wxauto
+	url = git@github.com:cluic/wxauto.git
