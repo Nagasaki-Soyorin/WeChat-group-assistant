@@ -7,7 +7,7 @@ class WechatGroupAssistant:
         self.listener = None
         self._running = False
         
-    async def _default_callback(self, group: str, sender: str, combined: str):
+    async def _default_callback(self, group: str, combined: str):
         """异步默认回调函数模板"""
         await self.listener.send("收到！")  # 改为异步等待
     
@@ -22,16 +22,16 @@ class WechatGroupAssistant:
     def _init_listener(self):
         """初始化监听器"""
         return AsyncWechatListener(
-            name=config["GROUP_LIST"],
+            name=config["GROUP_NAME"],
             callback=self._on_message,  # 注意这里仍然使用同步包装
             timeout=10
         )
     
-    def _on_message(self, group: str, sender: str, combined: str):
+    def _on_message(self, group: str, combined: str):
         """统一消息处理入口（同步包装异步操作）"""
         print(f"✅ 收到来自 [{group}] 的新消息")
         # 创建异步任务执行回调
-        asyncio.create_task(self._default_callback(group, sender, combined))
+        asyncio.create_task(self._default_callback(group, combined))
     
     def start(self):
         """启动服务"""
