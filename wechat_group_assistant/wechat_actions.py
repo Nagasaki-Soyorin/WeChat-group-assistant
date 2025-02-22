@@ -89,6 +89,24 @@ class AsyncWechatListener:
             
             async with self.lock:
                 for group in list(self.message_cache.keys()):
+                    entry = self.message_cache[group]
+                    messages, last_msg_time, last_trigger, total_len, sent_idx = entry
+                    
+                    if total_len > 10000:
+                        while messages and total_len > 10000:
+                            removed = messages.pop(0)
+                            removed_len = len(removed)
+                            total_len -= removed_len
+                            sent_idx = max(sent_idx - 1, -1) 
+
+                        self.message_cache[group] = (
+                            messages,
+                            last_msg_time,
+                            last_trigger,
+                            total_len,
+                            min(sent_idx, len(messages)-1)
+                        )
+
                     messages, last_msg_time, last_trigger, total_len, sent_idx = self.message_cache[group]
                     
                     msg_timeout = (current_time - last_msg_time) > self.timeout
@@ -96,21 +114,21 @@ class AsyncWechatListener:
                     has_new = len(messages) > sent_idx + 1
 
                     if msg_timeout and trigger_timeout and has_new:
-                        start_idx = sent_idx + 1
-                        expired.append( (group, messages[start_idx:].copy()) )
+                        expired.append((group, messages.copy()))
+                        
                         self.message_cache[group] = (
-                            messages, 
-                            last_msg_time, 
-                            current_time, 
-                            total_len, 
-                            len(messages)-1
+                            messages,
+                            last_msg_time,
+                            current_time,
+                            total_len,
+                            len(messages) - 1
                         )
-            
-            for group, new_messages in expired:
-                combined = '\n'.join(new_messages)
-                print(f"触发新消息回调：{group}（新增{len(new_messages)}条）")
+
+            for group, all_messages in expired:
+                combined = '\n'.join(all_messages) if all_messages else ''
+                print(f"触发全量消息回调：{group}（共{len(all_messages)}条，总长{len(combined)}字符）")
                 self.callback(group, combined)
-            
+
             await asyncio.sleep(1)
 
 
