@@ -1,12 +1,12 @@
 from openai import OpenAI
 from wechat_group_assistant.utils.config import config
 
-client = OpenAI(
-    base_url=config["ROUTER_ADDRESS"],
-    api_key=config["API_KEY"],
-)
-
 def simple_chat(prompt: str  = "", input: str = ""):
+    client = OpenAI(
+        base_url=config["ROUTER_ADDRESS"],
+        api_key=config["API_KEY"],
+    )
+    
     completion=client.chat.completions.create(
         model=config["SIMPLE_MODEL_NAME"],
         messages=[
@@ -24,6 +24,10 @@ def simple_chat(prompt: str  = "", input: str = ""):
     return completion.choices[0].message.content
 
 def complex_chat(prompt: str  = "", input: str = ""):
+    client = OpenAI(
+        base_url=config["ROUTER_ADDRESS"],
+        api_key=config["API_KEY"],
+    )
     completion=client.chat.completions.create(
         model=config["COMPLEX_MODEL_NAME"],
         messages=[
@@ -41,6 +45,6 @@ def complex_chat(prompt: str  = "", input: str = ""):
     return completion.choices[0].message.content
 
 if __name__ == "__main__":
-    print (simple_chat(input="Hello, who are you?"))
-    print (complex_chat(input="Hello, who are you?"))
+    print (simple_chat(prompt="请用中文回答", input="Hello, who are you?"))
+    print (complex_chat(prompt="请用中文回答", input="Hello, who are you?"))
     

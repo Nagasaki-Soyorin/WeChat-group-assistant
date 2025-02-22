@@ -1,1 +1,5 @@
 GROUP_NAME: bot反攻人类测试
+
+ROUTER_ADDRESS: https://openrouter.ai/api/v1
+SIMPLE_MODEL_NAME: deepseek/deepseek-chat:free
+COMPLEX_MODEL_NAME: deepseek/deepseek-r1

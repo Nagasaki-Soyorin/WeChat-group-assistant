@@ -5,29 +5,31 @@ from typing import Callable, List, Dict, Tuple
 from wechat_group_assistant.utils.utils import clean_wechat_group_name
 
 class AsyncWechatListener:
-    def __init__(self, name: str, callback: Callable[[str, str], None], timeout: int = 5):
+    def __init__(self, name: str, callback: Callable[[str, str], None], 
+                 timeout: int = 5, max_history_length: int = 10000):
         self.wx = WeChat()
         self.callback = callback
         self.timeout = timeout
         self._running = False
-        self.message_cache: Dict[str, Tuple[List[str], float]] = {}  # 调整为群组为键
+        self.message_cache: Dict[str, Tuple[List[str], float, float, int]] = {}
         self.lock = asyncio.Lock()
         self.name = name
+        self.send_lock = asyncio.Lock()
+        self.send_interval = 0.3
+        self.max_history_length = max_history_length
 
     async def _listen_loop(self):
         retry = 0
         while self._running:
             try:
-                # 获取所有新消息
                 raw_msgs = await asyncio.to_thread(self.wx.GetAllNewMessage)
                 
                 if not raw_msgs:
                     await asyncio.sleep(1)
                     continue
                 
-                print ("Access Messages: ", raw_msgs)
+                print("Access Messages:", raw_msgs)
                 
-                # 解析消息结构
                 for chat_name, messages in raw_msgs.items():
                     await self._process_messages(chat_name, messages)
                 
@@ -42,26 +44,43 @@ class AsyncWechatListener:
 
     async def _process_messages(self, group: str, messages: List[List[str]]):
         async with self.lock:
+            clean_group = clean_wechat_group_name(group)
             current_time = time.time()
-            # 使用工具函数清理群名
-            clean_group = clean_wechat_group_name(group)  # 修改这里
+            
+            if clean_group not in self.message_cache:
+                self.message_cache[clean_group] = ([], 0.0, 0.0, 0, -1)
+            
+            msg_list, last_msg_time, last_trigger, total_len, sent_idx = self.message_cache[clean_group]
             
             for msg in messages:
                 sender = msg[0]
                 content = str(msg[1]).strip()
                 
-                if sender in ("SYS", "Self"):
+                if sender == "SYS":
                     continue
                 
-                formatted_msg = f"{sender}: {content}"
+                formatted_msg = f"[{sender}] {content}"
+                msg_len = len(formatted_msg)
                 
-                if clean_group not in self.message_cache:
-                    self.message_cache[clean_group] = ([], current_time)
+                msg_list.append(formatted_msg)
+                total_len += msg_len
                 
-                messages_list, _ = self.message_cache[clean_group]
-                new_list = messages_list.copy()
-                new_list.append(formatted_msg)
-                self.message_cache[clean_group] = (new_list, current_time)
+                while total_len > self.max_history_length and len(msg_list) > 0:
+                    removed = msg_list.pop(0)
+                    total_len -= len(removed)
+                    if sent_idx >= 0:
+                        sent_idx -= 1
+                        if sent_idx < 0:
+                            sent_idx = -1
+            
+            self.message_cache[clean_group] = (
+                msg_list, 
+                current_time,
+                last_trigger,
+                total_len,
+                sent_idx
+            )
+
 
     async def _check_timeout(self):
         while self._running:
@@ -69,29 +88,46 @@ class AsyncWechatListener:
             expired = []
             
             async with self.lock:
-                # 遍历所有群组
                 for group in list(self.message_cache.keys()):
-                    messages_list, last_time = self.message_cache[group]
+                    messages, last_msg_time, last_trigger, total_len, sent_idx = self.message_cache[group]
                     
-                    # 检查超时且消息不为空
-                    if (current_time - last_time) > self.timeout and messages_list:
-                        expired.append((group, messages_list))
-                        del self.message_cache[group]
+                    msg_timeout = (current_time - last_msg_time) > self.timeout
+                    trigger_timeout = (current_time - last_trigger) > self.timeout
+                    has_new = len(messages) > sent_idx + 1
+
+                    if msg_timeout and trigger_timeout and has_new:
+                        start_idx = sent_idx + 1
+                        expired.append( (group, messages[start_idx:].copy()) )
+                        self.message_cache[group] = (
+                            messages, 
+                            last_msg_time, 
+                            current_time, 
+                            total_len, 
+                            len(messages)-1
+                        )
             
-            # 触发回调（sender参数设为"多人"）
-            for group, messages in expired:
-                combined = '\n'.join(messages)
-                print(f"触发合并回调：{group}")
+            for group, new_messages in expired:
+                combined = '\n'.join(new_messages)
+                print(f"触发新消息回调：{group}（新增{len(new_messages)}条）")
                 self.callback(group, combined)
             
             await asyncio.sleep(1)
 
+
+    @staticmethod
+    def _split_message(msg: str, max_len: int = 400) -> List[str]:
+        return [msg[i:i+max_len] for i in range(0, len(msg), max_len)]
+
     async def send(self, message: str):
-        try:
-            await asyncio.to_thread(self.wx.SendMsg, message, self.name)
-            print(f"消息已发送至 [{self.name}]: {message}")
-        except Exception as e:
-            print(f"发送失败: {e}")
+        async with self.send_lock:
+            try:
+                chunks = self._split_message(message)
+                for chunk in chunks:
+                    await asyncio.to_thread(self.wx.SendMsg, chunk, self.name)
+                    print(f"消息已发送至 [{self.name}]: {chunk}")
+                    await asyncio.sleep(self.send_interval)
+            except Exception as e:
+                print(f"发送失败: {e}")
 
     def start(self):
         if not self._running:
@@ -109,7 +145,6 @@ class AsyncWechatListener:
                 self.wx.Close()
             print("监听器已停止")
 
-# 测试用例
 if __name__ == "__main__":
     def test_callback(group: str, msg: str):
         print(f"[回调测试] {group}:")
