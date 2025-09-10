@@ -7,9 +7,11 @@ from wechat_group_assistant.question_process import process_question
 from typing import List, Dict, Optional
 import asyncio
 
+"""这是主程序"""
 class WechatGroupAssistant:
     def __init__(self):
         self.listener = None
+        # 状态参数 判断是否在执行
         self._running = False
     
     async def _process_and_reply(self, group: str, questions: List[str]):
